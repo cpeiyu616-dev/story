@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動數位繪本</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: linear-gradient(135deg, #1f1c2c, #928dab);
+            color: #fff;
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 頂部進度條（已移除標題文字） */
+        .header-bar {
+            position: absolute;
+            top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+        }
+        .progress-bar {
+            width: 160px;
+            height: 5px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #ffc107;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* 外層包裝：用來左右對齊按鈕與繪本 */
+        .wrapper {
+            display: flex;
+            align-items: center;
+            gap: 25px; /* 繪本與左右按鈕的距離 */
+        }
+
+        /* 繪本主容器 */
+        .container {
+            position: relative;
+            width: 62vw;
+            max-width: 680px;
+            aspect-ratio: 4 / 3;
+            background: #111;
+            border-radius: 14px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .page-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: opacity 0.3s ease;
+        }
+
+        /* 移到外側的左右翻頁按鈕 */
+        .nav-btn {
+            cursor: pointer;
+            width: 52px;
+            height: 52px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            padding: 11px;
+        }
+        .nav-btn img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .nav-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            transform: scale(1.1);
+        }
+
+        /* 語音導讀按鈕（維持在繪本右下角內部） */
+        .speech-btn {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: linear-gradient(135deg, #ff7e5f, #feb47b);
+            border: none;
+            border-radius: 50px;
+            padding: 8px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(255, 126, 95, 0.4);
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        .speech-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(255, 126, 95, 0.6);
+        }
+        .speech-btn img {
+            width: 26px;
+            height: 26px;
+            object-fit: contain;
+        }
+        .speech-btn span {
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        /* 底部頁碼提示 */
+        .page-indicator {
+            margin-top: 12px;
+            font-size: 15px;
+            letter-spacing: 1px;
+            color: #ddd;
+            background: rgba(0,0,0,0.3);
+            padding: 5px 14px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+    </div>
+
+    <!-- 用 wrapper 把左按鈕、繪本、右按鈕包在一起並水平置中 -->
+    <div class="wrapper">
+        <!-- 左翻頁按鈕（移到繪本外面左側） -->
+        <div class="nav-btn" onclick="prevPage()">
+            <img src="assets/graphics/left.jpg" alt="上一頁">
+        </div>
+
+        <div class="container">
+            <!-- 繪本圖片 -->
+            <img id="book-image" class="page-img" src="assets/graphics/0.jpg" alt="繪本頁面">
+
+            <!-- 語音導讀按鈕 -->
+            <button class="speech-btn" onclick="playSpeech()">
+                <img src="assets/graphics/read.jpg" alt="導讀圖示">
+                <span>語音導讀</span>
+            </button>
+        </div>
+
+        <!-- 右翻頁按鈕（移到繪本外面右側） -->
+        <div class="nav-btn" onclick="nextPage()">
+            <img src="assets/graphics/right.jpg" alt="下一頁">
+        </div>
+    </div>
+
+    <div class="page-indicator" id="indicator">封面 ( 第 0 / 19 頁 )</div>
+
+    <!-- 背景音樂 -->
+    <audio id="bgm" loop>
+        <source src="assets/music/music0.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- 語音導讀音訊 -->
+    <audio id="speech-audio"></audio>
+
+    <script>
+        let currentPage = 0;
+        const totalPages = 19;
+
+        const bookImage = document.getElementById('book-image');
+        const indicator = document.getElementById('indicator');
+        const progressFill = document.getElementById('progress-fill');
+        const bgm = document.getElementById('bgm');
+        const speechAudio = document.getElementById('speech-audio');
+
+        function updatePage() {
+            bookImage.style.opacity = 0;
+            setTimeout(() => {
+                bookImage.src = `assets/graphics/${currentPage}.jpg`;
+                bookImage.style.opacity = 1;
+            }, 150);
+
+            if (currentPage === 0) {
+                indicator.innerText = `封面 ( 第 0 / ${totalPages} 頁 )`;
+                progressFill.style.width = `0%`;
+            } else {
+                indicator.innerText = `第 ${currentPage} 頁 / 共 ${totalPages} 頁`;
+                progressFill.style.width = `${(currentPage / totalPages) * 100}%`;
+            }
+
+            bgm.src = `assets/music/music${currentPage}.mp3`;
+            bgm.play().catch(() => {});
+
+            playSpeech();
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                updatePage();
+            }
+        }
+
+        function prevPage() {
+            if (currentPage > 0) {
+                currentPage--;
+                updatePage();
+            }
+        }
+
+        function playSpeech() {
+            speechAudio.src = `assets/speech/speech${currentPage}.mp3`;
+            speechAudio.play().catch(() => {});
+        }
+
+        window.addEventListener('click', () => {
+            if (bgm.paused) {
+                bgm.play().catch(() => {});
+            }
+        }, { once: true });
+    </script>
+
+</body>
+</html>
